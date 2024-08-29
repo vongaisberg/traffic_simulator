@@ -3,13 +3,23 @@
 pub mod packet_train;
 
 use std::net::UdpSocket;
-use std::{thread, time};
+use std::{env, thread, time};
 
 use packet_train::PacketTrain;
 use rand_distr::{Distribution, Normal};
 
 fn main() -> std::io::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
+    let target_bandwidth = env::args()
+        .nth(1)
+        .expect("Please provide the target bandwidth in Mbit/s")
+        .parse::<f64>()
+        .expect("Please provide a valid number")
+        * 1_000_000.
+        / 8.;
+
+        let target_ip = env::args().nth(2)
+        .expect("Please provide the target IP address");
 
     let mut trains = [
         //Simulated Video Streaming (150ms of traffic every 5s)
@@ -63,7 +73,7 @@ fn main() -> std::io::Result<()> {
         "Mean bandwidth: {:.3}Mbit/s",
         mean_bandwidth / 1_000_000. * 8.
     );
-    let factor = (50_000_000. / 8.) / mean_bandwidth;
+    let factor = target_bandwidth / mean_bandwidth;
     for train in trains.iter_mut() {
         train.bandwith_dist = Normal::new(
             train.bandwith_dist.mean() * factor,
@@ -72,12 +82,12 @@ fn main() -> std::io::Result<()> {
         .unwrap();
     }
 
-    run(&socket, &mut trains)?;
+    run(&socket, &mut trains, target_ip)?;
 
     Ok(())
 }
 
-fn run(socket: &UdpSocket, trains: &mut [PacketTrain]) -> std::io::Result<()> {
+fn run(socket: &UdpSocket, trains: &mut [PacketTrain], target_ip: String) -> std::io::Result<()> {
     let buf = [0; 1420]; // Wireguard MTU is 1420
 
     loop {
@@ -106,7 +116,7 @@ fn run(socket: &UdpSocket, trains: &mut [PacketTrain]) -> std::io::Result<()> {
                     } else {
                         data_to_send
                     };
-                    socket.send_to(&buf[..data_to_send], "100.81.23.215:60000")?;
+                    socket.send_to(&buf[..data_to_send], &target_ip)?;
                     // print!("Sent {} bytes\n", data_to_send);
                     train.sum_of_data += (data_to_send + 46) as f64; // 46 is the size of all of the headers
                 } else {
